@@ -1,6 +1,7 @@
 Code.require_file("../../test_helper.exs", __DIR__)
 
 defmodule Mix.Tasks.DepsGitTest do
+  alias IEx.Pry
   use MixTest.Case
 
   defmodule DepsOnGitApp do
@@ -24,6 +25,20 @@ defmodule Mix.Tasks.DepsGitTest do
         version: "0.1.0",
         deps: [
           {:git_repo, "0.1.0", [git: fixture_path("git_repo")] ++ opts}
+        ]
+      ]
+    end
+  end
+
+  defmodule GitUmbrellaApp do
+    def project do
+      opts = Process.get(:git_repo_opts) || []
+
+      [
+        app: :git_app,
+        version: "0.1.0",
+        deps: [
+          {:git_repo, "0.1.0", [git: fixture_path("git_repo_umbrella")] ++ opts}
         ]
       ]
     end
@@ -92,6 +107,23 @@ defmodule Mix.Tasks.DepsGitTest do
       refute File.exists?("deps/git_repo/mix.exs")
       assert File.exists?("deps/git_repo/sparse_dir/mix.exs")
       assert File.read!("mix.lock") =~ "sparse: \"sparse_dir\""
+    end)
+  end
+
+  @tag :git_sparse
+  test "gets and updates Git repos deps in umbrella app with sparse checkout" do
+    Process.put(:git_repo_opts, sparse: "apps/sparse_dir")
+
+    in_fixture("no_mixfile", fn ->
+      Mix.Project.push(GitUmbrellaApp)
+
+      Mix.Tasks.Deps.Get.run([])
+      message = "* Getting git_repo (#{fixture_path("git_repo_umbrella")})"
+      assert_received {:mix_shell, :info, [^message]}
+      refute File.exists?("deps/git_repo/mix.exs")
+      assert File.exists?("deps/git_repo/apps/sparse_dir/mix.exs")
+      assert File.exists?("deps/git_repo/apps/umbrella_dep_dir/mix.exs")
+      assert File.read!("mix.lock") =~ "sparse: \"apps/sparse_dir\""
     end)
   end
 
@@ -308,7 +340,7 @@ defmodule Mix.Tasks.DepsGitTest do
       Mix.Tasks.Deps.Get.run([])
       assert File.exists?("deps/git_repo/lib/git_repo.ex")
 
-      # Flush the errors we got, move to a clean slate
+      # Flush the errors we got, move to a clean state
       Mix.shell().flush
       Mix.Task.clear()
       Process.put(:git_repo_opts, sparse: "sparse_dir")
